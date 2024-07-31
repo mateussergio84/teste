@@ -1,7 +1,6 @@
 package br.com.teste.ui;
 
 import br.com.teste.api.PedidoApi;
-
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
@@ -9,7 +8,9 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -121,57 +122,81 @@ public class ConsultaPedidosForm extends JFrame {
     }
 
     private void aplicarFiltros() {
-        String cliente = (String) clienteFilter.getSelectedItem();
-        String produto = (String) produtoFilter.getSelectedItem();
-        String situacao = (String) situacaoFilter.getSelectedItem();
-        String dataInicio = dataFilterStart.getText();
-        String dataFim = dataFilterEnd.getText();
-
         List<RowFilter<Object, Object>> filters = new ArrayList<>();
 
-        if (!"Todos".equals(cliente)) {
-            filters.add(RowFilter.regexFilter(getRegexForFilter(cliente), 1));
+        // Filtro para Cliente
+        String cliente = (String) clienteFilter.getSelectedItem();
+        if (cliente != null && !"Todos".equals(cliente)) {
+            filters.add(RowFilter.regexFilter(getRegexForFilter(cliente), 1)); // Coluna do nome do cliente
         }
-        if (!"Todos".equals(produto)) {
-            filters.add(RowFilter.regexFilter(getRegexForFilter(produto), 2));
+
+        // Filtro para Produto
+        String produto = (String) produtoFilter.getSelectedItem();
+        if (produto != null && !"Todos".equals(produto)) {
+            filters.add(RowFilter.regexFilter(getRegexForFilter(produto), 2)); // Coluna do nome do produto
         }
-        if (!"Todos".equals(situacao)) {
-            filters.add(RowFilter.regexFilter(getRegexForFilter(situacao), 4));
+
+        // Filtro para Situação
+        String situacao = (String) situacaoFilter.getSelectedItem();
+        if (situacao != null && !"Todos".equals(situacao)) {
+            filters.add(RowFilter.regexFilter(getRegexForFilter(situacao), 4)); // Coluna da situação
         }
+
+        // Filtro para Data
+        String dataInicio = dataFilterStart.getText();
+        String dataFim = dataFilterEnd.getText();
         if (!dataInicio.isEmpty() || !dataFim.isEmpty()) {
-            filters.add(RowFilter.regexFilter(getRegexForDateRange(dataInicio, dataFim), 3));
+            filters.add(RowFilter.regexFilter(getRegexForDateRange(dataInicio, dataFim), 3)); // Coluna da data
         }
 
         RowFilter<Object, Object> combinedFilter = RowFilter.andFilter(filters);
         rowSorter.setRowFilter(combinedFilter);
-
-        tableModel.fireTableDataChanged();
     }
 
     private String getRegexForDateRange(String start, String end) {
-        if (start.isEmpty() && end.isEmpty()) {
+        String startDatePattern = start.isEmpty() ? "" : start;
+        String endDatePattern = end.isEmpty() ? "" : end;
+        if (startDatePattern.isEmpty() && endDatePattern.isEmpty()) {
             return ".*";
-        } else if (!start.isEmpty() && end.isEmpty()) {
-            return start;
-        } else if (start.isEmpty()) {
-            return end;
+        } else if (!startDatePattern.isEmpty() && endDatePattern.isEmpty()) {
+            return startDatePattern;
+        } else if (startDatePattern.isEmpty()) {
+            return endDatePattern;
         } else {
-            return start + "|" + end;
+            return startDatePattern + "|" + endDatePattern;
         }
     }
 
     private String getRegexForFilter(String filter) {
-        return filter.equals("Todos") ? ".*" : filter;
+        if (filter == null || "Todos".equals(filter)) {
+            return ".*"; // Permitir todos os valores
+        }
+        return filter;
     }
 
     private void atualizarTabela() {
         try {
             PedidoApi pedidoApi = new PedidoApi();
             JSONArray pedidos;
-            if ("Por Cliente".equals(viewComboBox.getSelectedItem())) {
+            String view = (String) viewComboBox.getSelectedItem();
+
+            if ("Por Cliente".equals(view)) {
                 pedidos = pedidoApi.obterPedidosAgrupadosPorCliente();
+                atualizarComboBox(clienteFilter, pedidos, "cliente_nome");
+                produtoFilter.setEnabled(false);
             } else {
                 pedidos = pedidoApi.obterPedidosAgrupadosPorProduto();
+                atualizarComboBox(produtoFilter, pedidos, "produto_descricao");
+                clienteFilter.setEnabled(false);
+            }
+
+            // Habilitar o JComboBox que não está ativo
+            if ("Por Cliente".equals(view)) {
+                produtoFilter.setEnabled(false);
+                clienteFilter.setEnabled(true);
+            } else {
+                clienteFilter.setEnabled(false);
+                produtoFilter.setEnabled(true);
             }
 
             tableModel.setRowCount(0);
@@ -183,9 +208,9 @@ public class ConsultaPedidosForm extends JFrame {
                 String nome;
                 Double totalValor = pedido.optDouble("total_valor", 0.0);
                 String data = pedido.optString("data_pedido", "Desconhecido");
-                String situacao = pedido.optString("situacao_pedido", "Desconhecido");
+                String situacao = pedido.optBoolean("situacao_pedido", false) ? "Ativo" : "Inativo";
 
-                if ("Por Cliente".equals(viewComboBox.getSelectedItem())) {
+                if ("Por Cliente".equals(view)) {
                     codigo = pedido.optLong("cliente_codigo", -1);
                     nome = pedido.optString("cliente_nome", "Desconhecido");
                 } else {
@@ -202,12 +227,34 @@ public class ConsultaPedidosForm extends JFrame {
                 });
             }
 
+            // Aplicar filtros após atualizar a tabela
             aplicarFiltros();
         } catch (Exception e) {
+            e.printStackTrace(); // Adicione um tratamento de erro mais robusto
+        }
+    }
+
+    private void atualizarComboBox(JComboBox<String> comboBox, JSONArray pedidos, String key) {
+        // Limpar e adicionar a primeira opção
+        comboBox.removeAllItems();
+        comboBox.addItem("Todos");
+
+        // Criar um conjunto para evitar duplicatas
+        Set<String> items = new HashSet<>();
+        for (int i = 0; i < pedidos.length(); i++) {
+            JSONObject pedido = pedidos.getJSONObject(i);
+            items.add(pedido.optString(key, "Desconhecido"));
+        }
+
+        // Adicionar itens ao comboBox
+        for (String item : items) {
+            comboBox.addItem(item);
         }
     }
 
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new ConsultaPedidosForm().setVisible(true));
+        SwingUtilities.invokeLater(() -> {
+            new ConsultaPedidosForm().setVisible(true);
+        });
     }
 }

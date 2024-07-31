@@ -5,145 +5,129 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import javax.swing.*;
-import javax.swing.event.ListSelectionEvent;
-import javax.swing.event.ListSelectionListener;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 
-public class ManutencaoPedidoForm {
+public class ManutencaoPedidoForm extends JFrame {
 
-    private static PedidoApi pedidoApi = new PedidoApi();
-    private static JFrame frame;
-    private static JTable table;
-    private static DefaultTableModel tableModel;
-    private static JTextField quantidadeField;
-    private static JButton editarButton;
-    private static JButton deletarButton;
-    private static long selectedPedidoId = -1;
+    private JTable pedidosTable;
+    private DefaultTableModel tableModel;
+    private JButton alterarQuantidadeButton;
+    private JButton deletarPedidoButton;
+    private PedidoApi pedidoApi;
 
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            frame = new JFrame("Manutenção de Pedidos");
-            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-            frame.setSize(600, 400);
-            frame.setLayout(new BorderLayout());
+    public ManutencaoPedidoForm() {
+        pedidoApi = new PedidoApi();
 
-            // Table Model
-            String[] columnNames = {"ID", "Cliente", "Produto", "Quantidade"};
-            tableModel = new DefaultTableModel(columnNames, 0);
-            table = new JTable(tableModel);
-            JScrollPane scrollPane = new JScrollPane(table);
-            frame.add(scrollPane, BorderLayout.CENTER);
+        setTitle("Manutenção de Pedidos");
+        setSize(800, 600);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+        setLayout(new BorderLayout());
 
-            // Add ListSelectionListener to table
-            table.getSelectionModel().addListSelectionListener(new PedidoTableSelectionListener());
-
-            // Bottom Panel
-            JPanel bottomPanel = new JPanel();
-            bottomPanel.setLayout(new FlowLayout());
-
-            quantidadeField = new JTextField(10);
-            bottomPanel.add(new JLabel("Quantidade:"));
-            bottomPanel.add(quantidadeField);
-
-            editarButton = new JButton("Editar");
-            editarButton.addActionListener(new ActionListener() {
-                @Override
-                public void actionPerformed(ActionEvent e) {
-                    editarQuantidade();
-                }
-            });
-            bottomPanel.add(editarButton);
-
-            deletarButton = new JButton("Deletar");
-            deletarButton.addActionListener(new ActionListener() {
-                @Override
-                public void actionPerformed(ActionEvent e) {
-                    deletarPedido();
-                }
-            });
-            bottomPanel.add(deletarButton);
-
-            frame.add(bottomPanel, BorderLayout.SOUTH);
-
-            // Load Data
-            carregarDados();
-
-            frame.setVisible(true);
-        });
+        criarComponentes();
+        carregarPedidos();
     }
 
-    private static void carregarDados() {
+    private void criarComponentes() {
+        tableModel = new DefaultTableModel(
+                new Object[]{"Código", "Cliente", "Produto", "Quantidade", "Data", "Situação"},
+                0
+        );
+        pedidosTable = new JTable(tableModel);
+        JScrollPane scrollPane = new JScrollPane(pedidosTable);
+        add(scrollPane, BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel();
+        alterarQuantidadeButton = new JButton("Alterar Quantidade");
+        deletarPedidoButton = new JButton("Deletar Pedido");
+
+        alterarQuantidadeButton.addActionListener(e -> alterarQuantidade());
+        deletarPedidoButton.addActionListener(e -> deletarPedido());
+
+        buttonPanel.add(alterarQuantidadeButton);
+        buttonPanel.add(deletarPedidoButton);
+        add(buttonPanel, BorderLayout.SOUTH);
+    }
+
+    private void carregarPedidos() {
         try {
-            JSONArray pedidos = pedidoApi.obterPedidos();
+            JSONArray pedidos = pedidoApi.obterTodosPedidos();
             tableModel.setRowCount(0);
 
             for (int i = 0; i < pedidos.length(); i++) {
                 JSONObject pedido = pedidos.getJSONObject(i);
-                long id = pedido.getLong("id");
-                String cliente = pedido.getJSONObject("cliente").optString("nome", "N/A");
-                String produto = pedido.getJSONObject("produto").optString("descricao", "N/A");
-                int quantidade = pedido.optInt("quantidade", 0);
-                tableModel.addRow(new Object[]{id, cliente, produto, quantidade});
-            }
-        } catch (Exception ex) {
-            JOptionPane.showMessageDialog(frame, "Erro ao carregar pedidos: " + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
-        }
-    }
 
-    private static void editarQuantidade() {
-        if (selectedPedidoId != -1) {
-            try {
-                int novaQuantidade = Integer.parseInt(quantidadeField.getText());
-                boolean sucesso = pedidoApi.editarQuantidade(selectedPedidoId, novaQuantidade);
-                if (sucesso) {
-                    JOptionPane.showMessageDialog(frame, "Quantidade atualizada com sucesso!", "Sucesso", JOptionPane.INFORMATION_MESSAGE);
-                    carregarDados();
+                if (pedido.has("cliente") && pedido.get("cliente") instanceof JSONObject &&
+                        pedido.has("produto") && pedido.get("produto") instanceof JSONObject) {
+
+                    JSONObject cliente = pedido.getJSONObject("cliente");
+                    JSONObject produto = pedido.getJSONObject("produto");
+
+                    tableModel.addRow(new Object[]{
+                            pedido.getInt("codigo"),
+                            cliente.getString("nome"),
+                            produto.getString("descricao"),
+                            pedido.getInt("quantidade"),
+                            pedido.getString("data"),
+                            pedido.getBoolean("situacao") ? "Ativo" : "Inativo"
+                    });
                 } else {
-                    JOptionPane.showMessageDialog(frame, "Falha ao atualizar quantidade.", "Erro", JOptionPane.ERROR_MESSAGE);
+                    System.out.println("Formato de JSON inesperado: " + pedido);
                 }
-            } catch (NumberFormatException ex) {
-                JOptionPane.showMessageDialog(frame, "Quantidade inválida.", "Erro", JOptionPane.ERROR_MESSAGE);
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(frame, "Erro ao editar quantidade: " + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
             }
-        } else {
-            JOptionPane.showMessageDialog(frame, "Selecione um pedido para editar.", "Aviso", JOptionPane.WARNING_MESSAGE);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Erro ao carregar pedidos: " + e.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace();
         }
     }
 
-    private static void deletarPedido() {
-        if (selectedPedidoId != -1) {
+    private void alterarQuantidade() {
+        int selectedRow = pedidosTable.getSelectedRow();
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(this, "Selecione um pedido para alterar a quantidade.");
+            return;
+        }
+
+        int codigo = (int) tableModel.getValueAt(selectedRow, 0);
+        String quantidadeStr = JOptionPane.showInputDialog(this, "Nova Quantidade:");
+        if (quantidadeStr != null) {
             try {
-                boolean sucesso = pedidoApi.deletarPedido(selectedPedidoId);
-                if (sucesso) {
-                    JOptionPane.showMessageDialog(frame, "Pedido deletado com sucesso!", "Sucesso", JOptionPane.INFORMATION_MESSAGE);
-                    carregarDados();
-                    selectedPedidoId = -1;
-                } else {
-                    JOptionPane.showMessageDialog(frame, "Falha ao deletar pedido.", "Erro", JOptionPane.ERROR_MESSAGE);
-                }
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(frame, "Erro ao deletar pedido: " + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+                int quantidade = Integer.parseInt(quantidadeStr);
+                pedidoApi.alterarQuantidadePedido(codigo, quantidade);
+                carregarPedidos();
+            } catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(this, "Quantidade inválida.", "Erro", JOptionPane.ERROR_MESSAGE);
+            } catch (Exception e) {
+                JOptionPane.showMessageDialog(this, "Erro ao alterar a quantidade: " + e.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+                e.printStackTrace();
             }
-        } else {
-            JOptionPane.showMessageDialog(frame, "Selecione um pedido para deletar.", "Aviso", JOptionPane.WARNING_MESSAGE);
         }
     }
 
-    public void setVisible(boolean b) {
-    }
+    private void deletarPedido() {
+        int selectedRow = pedidosTable.getSelectedRow();
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(this, "Selecione um pedido para deletar.");
+            return;
+        }
 
-    private static class PedidoTableSelectionListener implements ListSelectionListener {
-        @Override
-        public void valueChanged(ListSelectionEvent e) {
-            int selectedRow = table.getSelectedRow();
-            if (selectedRow != -1) {
-                selectedPedidoId = (Long) table.getValueAt(selectedRow, 0);
-                quantidadeField.setText(table.getValueAt(selectedRow, 3).toString());
+        int codigo = (int) tableModel.getValueAt(selectedRow, 0);
+        int confirm = JOptionPane.showConfirmDialog(this, "Tem certeza que deseja deletar o pedido?", "Confirmar Deleção", JOptionPane.YES_NO_OPTION);
+        if (confirm == JOptionPane.YES_OPTION) {
+            try {
+                pedidoApi.deletarPedido(codigo);
+                carregarPedidos();
+            } catch (Exception e) {
+                JOptionPane.showMessageDialog(this, "Erro ao deletar o pedido: " + e.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+                e.printStackTrace();
             }
         }
+    }
+
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> new ManutencaoPedidoForm().setVisible(true));
     }
 }

@@ -59,14 +59,17 @@ public class PedidoService {
         if (!validarCredito(cliente.getCodigo(), produto.getPreco(), pedido.getQuantidade())) {
             BigDecimal valorPedido = calcularValorPedido(pedido.getQuantidade(), produto.getPreco());
             BigDecimal totalPedidosDepoisFechamento = calcularTotalPedidosDepoisFechamento(cliente.getCodigo(), cliente.getDtFechamento());
-            BigDecimal limiteDisponivel = cliente.getLimite().subtract(totalPedidosDepoisFechamento.add(valorPedido));
+            BigDecimal limite = cliente.getLimite();
+            BigDecimal limiteDisponivel = limite.subtract(totalPedidosDepoisFechamento);
+
+
             throw new IllegalArgumentException(
-                    String.format("Limite de crédito ultrapassado. Limite disponível: %s, Valor do pedido: %s",
-                            limiteDisponivel, valorPedido));
+                    String.format("Limite de crédito ultrapassado. Limite: %s, Limite disponivel: %s Valor do pedido: %s",
+                            limite, limiteDisponivel, valorPedido));
         }
 
         if (verificarProdutoRepetido(cliente.getCodigo(), produto.getCodigo())) {
-            throw new IllegalArgumentException("Produto já foi adicionado na venda. Altere em produtos se necessario");
+            throw new IllegalArgumentException("Produto já foi adicionado Altere em Manutencao Pedido se necessario");
         }
 
         pedido.setData(LocalDate.now());
